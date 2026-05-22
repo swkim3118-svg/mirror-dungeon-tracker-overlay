@@ -43,8 +43,8 @@ def build():
         zf.write(exe_path, arcname=f"{APP_NAME}.exe")
         zf.write(readme_path, arcname="README.txt")
 
-    print(f"\n빌드 완료: {exe_path}")
-    print(f"배포 zip: {zip_path}")
+    print(f"\nBuild complete: {exe_path}")
+    print(f"Release zip: {zip_path}")
 
 
 if __name__ == "__main__":
