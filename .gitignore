@@ -1,0 +1,17 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+build/
+dist/
+*.spec
+
+data/.user_id
+data/*.bak*
+*.log
+
+.env
+
+.claude/
+outputs/

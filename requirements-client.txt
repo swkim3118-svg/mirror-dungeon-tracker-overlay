@@ -1,0 +1,8 @@
+easyocr==1.7.1
+mss==9.0.1
+opencv-python==4.10.0.84
+Pillow==10.4.0
+PyQt5==5.15.11
+requests==2.32.0
+pywin32==306
+pyinstaller==6.11.1
