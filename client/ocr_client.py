@@ -13,6 +13,8 @@ import win32con
 from screen_regions import REGIONS, get_pixel_region, get_all_regions_for_screen
 
 SERVER_URL = os.environ.get("MD_SERVER_URL", "http://3.83.159.179:8080")
+ICON_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "egogift_icons")
+ICON_MATCH_THRESHOLD = 0.72
 
 class MirrorDungeonOCR:
     def __init__(self):
@@ -21,6 +23,7 @@ class MirrorDungeonOCR:
         self.sct = mss.mss()
         self.current_screen_type = None
         self.game_window = None
+        self.icon_matcher = GiftIconMatcher(ICON_DIR)
         print("OCR 준비 완료!")
 
     def find_game_window(self):
@@ -127,17 +130,30 @@ class MirrorDungeonOCR:
         config = REGIONS['owned_gifts']
         gift_name = self.ocr_region(img, config['gift_name'], window_info)
         gift_desc = self.ocr_region(img, config['gift_desc'], window_info)
-        return {'name': gift_name.strip(), 'desc': gift_desc.strip()}
+        gift_icon = self.icon_match_region(img, config.get('gift_icon'), window_info)
+        return {'name': gift_name.strip(), 'desc': gift_desc.strip(), 'icon_match': gift_icon}
 
     def scan_shop(self, img, window_info):
         """상점 화면 스캔"""
-        config = REGIONS['special_shop']
+        config = REGIONS.get(self.current_screen_type) or REGIONS['special_shop']
         gifts = []
-        for name_region in config['gift_names']:
+        icon_regions = config.get('gift_icons') or []
+        for idx, name_region in enumerate(config['gift_names']):
             name = self.ocr_region(img, name_region, window_info)
-            if name.strip():
-                gifts.append(name.strip())
+            icon_match = self.icon_match_region(
+                img,
+                icon_regions[idx] if idx < len(icon_regions) else None,
+                window_info,
+            )
+            if name.strip() or icon_match:
+                gifts.append({'name': name.strip(), 'icon_match': icon_match})
         return gifts
+
+    def icon_match_region(self, img, region, window_info):
+        if not region:
+            return None
+        cropped = self.crop_region(img, region, window_info)
+        return self.icon_matcher.match(cropped)
 
     def scan(self):
         """메인 스캔 함수 - 화면 감지 후 적절한 스캔 수행"""
@@ -163,14 +179,25 @@ class MirrorDungeonOCR:
         elif screen_type in ('special_shop', 'normal_shop'):
             shop_gifts = self.scan_shop(img, window_info)
             result['shop_gifts'] = shop_gifts
-            gift_texts = [g for g in shop_gifts if g]
+            gift_texts = [g['name'] for g in shop_gifts if g.get('name')]
         else:
             result['message'] = '인식 가능한 화면이 아닙니다'
 
         # 화면 종류와 무관하게 매칭에 사용할 통일 필드
         result['gift_texts'] = gift_texts
         result['texts'] = gift_texts
+        result['icon_matches'] = self.collect_icon_matches(result)
         return result
+
+    def collect_icon_matches(self, result):
+        matches = []
+        gift = result.get('gift') or {}
+        if gift.get('icon_match'):
+            matches.append(gift['icon_match'])
+        for gift in result.get('shop_gifts') or []:
+            if isinstance(gift, dict) and gift.get('icon_match'):
+                matches.append(gift['icon_match'])
+        return matches
 
     def match_gift_name(self, ocr_text):
         """OCR 결과를 DB의 기프트 이름과 매칭"""
@@ -183,6 +210,84 @@ class MirrorDungeonOCR:
         except:
             pass
         return None
+
+
+class GiftIconMatcher:
+    """Template-based E.G.O gift icon matcher.
+
+    It is intentionally used as a fallback/boost for OCR, because OCR handles
+    new gifts better while icon matching is stronger when the icon DB is complete.
+    """
+
+    def __init__(self, icon_dir):
+        self.icon_dir = icon_dir
+        self.templates = []
+        self._loaded = False
+
+    def load(self):
+        if self._loaded:
+            return
+        self._loaded = True
+        if not os.path.isdir(self.icon_dir):
+            return
+        for fname in os.listdir(self.icon_dir):
+            if not fname.lower().endswith((".png", ".jpg", ".jpeg")):
+                continue
+            gift_id = os.path.splitext(fname)[0].split("_")[0]
+            if not gift_id.isdigit():
+                continue
+            path = os.path.join(self.icon_dir, fname)
+            img = cv2.imread(path, cv2.IMREAD_COLOR)
+            if img is None or img.size == 0:
+                continue
+            self.templates.append((int(gift_id), self.prepare(img)))
+
+    def prepare(self, img):
+        if img is None or img.size == 0:
+            return None
+        square = self.center_square(img)
+        resized = cv2.resize(square, (64, 64), interpolation=cv2.INTER_AREA)
+        hsv = cv2.cvtColor(resized, cv2.COLOR_BGR2HSV)
+        h_hist = cv2.calcHist([hsv], [0, 1], None, [24, 24], [0, 180, 0, 256])
+        cv2.normalize(h_hist, h_hist, 0, 1, cv2.NORM_MINMAX)
+        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        return {"hist": h_hist, "gray": gray}
+
+    def center_square(self, img):
+        h, w = img.shape[:2]
+        side = min(h, w)
+        y = max((h - side) // 2, 0)
+        x = max((w - side) // 2, 0)
+        return img[y:y + side, x:x + side]
+
+    def match(self, crop):
+        self.load()
+        if not self.templates or crop is None or crop.size == 0:
+            return None
+        prepared = self.prepare(crop)
+        if not prepared:
+            return None
+
+        best = None
+        for gift_id, template in self.templates:
+            hist_score = cv2.compareHist(prepared["hist"], template["hist"], cv2.HISTCMP_CORREL)
+            edge_score = self.edge_similarity(prepared["gray"], template["gray"])
+            score = (hist_score * 0.65) + (edge_score * 0.35)
+            if best is None or score > best["confidence"]:
+                best = {"gift_id": gift_id, "confidence": float(score)}
+
+        if best and best["confidence"] >= ICON_MATCH_THRESHOLD:
+            return best
+        return None
+
+    def edge_similarity(self, a, b):
+        a_edges = cv2.Canny(a, 80, 160)
+        b_edges = cv2.Canny(b, 80, 160)
+        result = cv2.matchTemplate(a_edges, b_edges, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, _ = cv2.minMaxLoc(result)
+        if np.isnan(max_val):
+            return 0.0
+        return float(max_val)
 
 
 if __name__ == '__main__':

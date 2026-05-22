@@ -25,6 +25,7 @@ REGIONS = {
     'owned_gifts': {
         'title': '보유 E.G.O 기프트',
         'detect_keyword': '보유 E.G.O',  # 이 텍스트가 보이면 보유 화면
+        'gift_icon': (0.05, 0.12, 0.12, 0.16),
         'gift_name': (0.18, 0.14, 0.25, 0.06),  # 주황 배경 기프트 이름 영역
         'gift_desc': (0.05, 0.30, 0.40, 0.30),  # 기프트 설명 영역
     },
@@ -39,6 +40,12 @@ REGIONS = {
             (0.47, 0.78, 0.12, 0.04),  # 2번 기프트 이름
             (0.61, 0.78, 0.12, 0.04),  # 3번 기프트 이름
             (0.75, 0.78, 0.12, 0.04),  # 4번 기프트 이름
+        ],
+        'gift_icons': [
+            (0.32, 0.62, 0.13, 0.13),
+            (0.46, 0.62, 0.13, 0.13),
+            (0.60, 0.62, 0.13, 0.13),
+            (0.74, 0.62, 0.13, 0.13),
         ],
         # 가격 영역
         'prices': [
@@ -64,6 +71,11 @@ REGIONS = {
             (0.35, 0.78, 0.12, 0.04),
             (0.50, 0.78, 0.12, 0.04),
             (0.65, 0.78, 0.12, 0.04),
+        ],
+        'gift_icons': [
+            (0.34, 0.62, 0.13, 0.13),
+            (0.49, 0.62, 0.13, 0.13),
+            (0.64, 0.62, 0.13, 0.13),
         ]
     }
 }
@@ -93,12 +105,17 @@ def get_all_regions_for_screen(screen_type, window_width, window_height):
                 'desc': get_pixel_region(choice['desc'], window_width, window_height),
             })
     elif screen_type == 'owned_gifts':
+        result['gift_icon'] = get_pixel_region(config['gift_icon'], window_width, window_height)
         result['gift_name'] = get_pixel_region(config['gift_name'], window_width, window_height)
         result['gift_desc'] = get_pixel_region(config['gift_desc'], window_width, window_height)
     elif screen_type in ('special_shop', 'normal_shop'):
         result['gift_names'] = [
             get_pixel_region(r, window_width, window_height) for r in config['gift_names']
         ]
+        if 'gift_icons' in config:
+            result['gift_icons'] = [
+                get_pixel_region(r, window_width, window_height) for r in config['gift_icons']
+            ]
         if 'prices' in config:
             result['prices'] = [
                 get_pixel_region(r, window_width, window_height) for r in config['prices']

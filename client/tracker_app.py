@@ -149,6 +149,16 @@ class DataClient:
     def gift_by_name(self, name):
         return self._name_index.get(name)
 
+    def gift_by_id(self, gift_id):
+        try:
+            gift_id = int(gift_id)
+        except (TypeError, ValueError):
+            return None
+        for gift in self._gifts:
+            if gift.get('id') == gift_id:
+                return gift
+        return None
+
     # --- OCR 텍스트 -> 기프트 퍼지 매칭 ---
     def match_gift(self, ocr_text, cutoff=0.55):
         ocr_text = (ocr_text or '').strip()
@@ -724,15 +734,31 @@ class MirrorDungeonTracker(QWidget):
 
         added = 0
         unmatched = []
+        matched_ids = set()
+
+        for match in result.get('icon_matches') or []:
+            g = self.data.gift_by_id(match.get('gift_id'))
+            if not g:
+                continue
+            if self._add_owned_gift(g, was_recommended=False):
+                added += 1
+                matched_ids.add(g.get('id'))
+
         for t in texts:
             g = self.data.match_gift(t)
             if not g:
                 unmatched.append(t)
                 continue
+            if g.get('id') in matched_ids:
+                continue
             if self._add_owned_gift(g, was_recommended=False):
                 added += 1
 
-        msg = f"[{screen}] {added}/{len(texts)} matched & added"
+        icon_count = len(result.get('icon_matches') or [])
+        total_seen = len(texts) + icon_count
+        msg = f"[{screen}] {added}/{total_seen} matched & added"
+        if icon_count:
+            msg += f" | icon {icon_count}"
         if unmatched:
             msg += f" | missed: {', '.join(unmatched[:2])[:28]}"
         self.status_label.setText(msg)

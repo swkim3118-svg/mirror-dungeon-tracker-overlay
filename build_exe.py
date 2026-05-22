@@ -19,6 +19,7 @@ def build():
         "--onefile",
         "--windowed",
         "--add-data=data/mirror_dungeon.db;data",
+        "--add-data=data/egogift_icons;data/egogift_icons",
         "--hidden-import=ocr_client",
         "--hidden-import=screen_regions",
         "--hidden-import=sqlite3",
