@@ -736,14 +736,6 @@ class MirrorDungeonTracker(QWidget):
         unmatched = []
         matched_ids = set()
 
-        for match in result.get('icon_matches') or []:
-            g = self.data.gift_by_id(match.get('gift_id'))
-            if not g:
-                continue
-            if self._add_owned_gift(g, was_recommended=False):
-                added += 1
-                matched_ids.add(g.get('id'))
-
         for t in texts:
             g = self.data.match_gift(t)
             if not g:
@@ -753,12 +745,25 @@ class MirrorDungeonTracker(QWidget):
                 continue
             if self._add_owned_gift(g, was_recommended=False):
                 added += 1
+                matched_ids.add(g.get('id'))
+
+        icon_added = 0
+        for match in result.get('icon_matches') or []:
+            g = self.data.gift_by_id(match.get('gift_id'))
+            if not g:
+                continue
+            if g.get('id') in matched_ids:
+                continue
+            if self._add_owned_gift(g, was_recommended=False):
+                added += 1
+                icon_added += 1
+                matched_ids.add(g.get('id'))
 
         icon_count = len(result.get('icon_matches') or [])
         total_seen = len(texts) + icon_count
         msg = f"[{screen}] {added}/{total_seen} matched & added"
         if icon_count:
-            msg += f" | icon {icon_count}"
+            msg += f" | icon fallback {icon_added}/{icon_count}"
         if unmatched:
             msg += f" | missed: {', '.join(unmatched[:2])[:28]}"
         self.status_label.setText(msg)

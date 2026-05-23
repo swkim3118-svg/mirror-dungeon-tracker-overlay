@@ -130,7 +130,9 @@ class MirrorDungeonOCR:
         config = REGIONS['owned_gifts']
         gift_name = self.ocr_region(img, config['gift_name'], window_info)
         gift_desc = self.ocr_region(img, config['gift_desc'], window_info)
-        gift_icon = self.icon_match_region(img, config.get('gift_icon'), window_info)
+        gift_icon = None
+        if not gift_name.strip():
+            gift_icon = self.icon_match_region(img, config.get('gift_icon'), window_info)
         return {'name': gift_name.strip(), 'desc': gift_desc.strip(), 'icon_match': gift_icon}
 
     def scan_shop(self, img, window_info):
@@ -140,11 +142,13 @@ class MirrorDungeonOCR:
         icon_regions = config.get('gift_icons') or []
         for idx, name_region in enumerate(config['gift_names']):
             name = self.ocr_region(img, name_region, window_info)
-            icon_match = self.icon_match_region(
-                img,
-                icon_regions[idx] if idx < len(icon_regions) else None,
-                window_info,
-            )
+            icon_match = None
+            if not name.strip():
+                icon_match = self.icon_match_region(
+                    img,
+                    icon_regions[idx] if idx < len(icon_regions) else None,
+                    window_info,
+                )
             if name.strip() or icon_match:
                 gifts.append({'name': name.strip(), 'icon_match': icon_match})
         return gifts
