@@ -9,14 +9,13 @@ APP_NAME = "MirrorDungeonTracker"
 
 
 def build():
-    for d in ["build", "dist"]:
-        if os.path.exists(d):
-            shutil.rmtree(d)
+    for directory in ["build", "dist"]:
+        if os.path.exists(directory):
+            shutil.rmtree(directory)
 
     PyInstaller.__main__.run([
         "client/tracker_app.py",
         f"--name={APP_NAME}",
-        "--onefile",
         "--windowed",
         "--add-data=data/mirror_dungeon.db;data",
         "--add-data=data/egogift_icons;data/egogift_icons",
@@ -27,22 +26,28 @@ def build():
         "--noconfirm",
     ])
 
-    exe_path = os.path.join("dist", f"{APP_NAME}.exe")
-    readme_path = os.path.join("dist", "README.txt")
+    app_dir = os.path.join("dist", APP_NAME)
+    exe_path = os.path.join(app_dir, f"{APP_NAME}.exe")
+    readme_path = os.path.join(app_dir, "README.txt")
     zip_path = os.path.join("dist", f"{APP_NAME}.zip")
 
     with open(readme_path, "w", encoding="utf-8") as f:
         f.write(
             "Mirror Dungeon Tracker Overlay\n"
             "\n"
-            "1. MirrorDungeonTracker.exe를 실행하세요.\n"
-            "2. 기본 서버는 EC2 본섭(http://3.83.159.179:8080)입니다.\n"
-            "3. 로컬 개발 서버를 쓰려면 실행 전 MD_SERVER_URL 환경변수를 설정하세요.\n"
+            "1. Unzip MirrorDungeonTracker.zip first.\n"
+            "2. Keep all files in the extracted MirrorDungeonTracker folder.\n"
+            "3. Run MirrorDungeonTracker.exe inside that folder.\n"
+            "4. The default server is http://3.83.159.179:8080.\n"
+            "5. For local development, set MD_SERVER_URL before running the app.\n"
         )
 
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.write(exe_path, arcname=f"{APP_NAME}.exe")
-        zf.write(readme_path, arcname="README.txt")
+        for root, _, files in os.walk(app_dir):
+            for file_name in files:
+                full_path = os.path.join(root, file_name)
+                archive_path = os.path.relpath(full_path, "dist")
+                zf.write(full_path, arcname=archive_path)
 
     print(f"\nBuild complete: {exe_path}")
     print(f"Release zip: {zip_path}")
