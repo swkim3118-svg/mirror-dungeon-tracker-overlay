@@ -12,9 +12,23 @@ import win32gui
 import win32con
 from screen_regions import REGIONS, get_pixel_region, get_all_regions_for_screen
 
-SERVER_URL = os.environ.get("MD_SERVER_URL", "http://3.83.159.179:8080")
+SERVER_URL = os.environ.get("MD_SERVER_URL", "http://54.175.210.238:8080")
 ICON_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "egogift_icons")
 ICON_MATCH_THRESHOLD = 0.72
+RUN_RESULT_KEYWORDS = {
+    "클리어": [
+        "거울던전 클리어", "거울 던전 클리어", "탐사 완료", "던전 완료",
+        "거울던전 완료", "정산", "보상 획득", "CLEAR", "Clear", "clear",
+    ],
+    "전복": [
+        "거울던전 실패", "거울 던전 실패", "탐사 실패", "전복", "전멸",
+        "패배", "DEFEAT", "Defeat", "defeat", "FAILED", "Failed", "도전 실패",
+    ],
+}
+RUN_RESULT_CONTEXT_KEYWORDS = [
+    "거울던전", "거울 던전", "Mirror Dungeon", "mirror dungeon",
+    "탐사", "정산", "보상", "코스트", "별빛", "시즌",
+]
 
 class MirrorDungeonOCR:
     def __init__(self):
@@ -114,6 +128,35 @@ class MirrorDungeonOCR:
 
         return None
 
+    def detect_run_result(self, img, window_info):
+        """클리어/전복 결과 화면을 넓은 영역 OCR로 감지."""
+        regions = [
+            (0.05, 0.05, 0.90, 0.25),
+            (0.10, 0.25, 0.80, 0.35),
+            (0.10, 0.60, 0.80, 0.25),
+        ]
+        text_parts = []
+        for region in regions:
+            text = self.ocr_region(img, region, window_info)
+            if text:
+                text_parts.append(text)
+        combined = " ".join(text_parts)
+        compact = combined.replace(" ", "").lower()
+        has_md_context = any(
+            keyword.replace(" ", "").lower() in compact
+            for keyword in RUN_RESULT_CONTEXT_KEYWORDS
+        )
+        for result, keywords in RUN_RESULT_KEYWORDS.items():
+            for keyword in keywords:
+                normalized_keyword = keyword.replace(" ", "").lower()
+                if normalized_keyword in compact and (has_md_context or "거울" in normalized_keyword):
+                    return {
+                        "result": result,
+                        "cause": "OCR result screen",
+                        "text": combined[:500],
+                    }
+        return None
+
     def scan_event_choices(self, img, window_info):
         """이벤트 선택지 화면 스캔"""
         config = REGIONS['event_choices']
@@ -170,6 +213,9 @@ class MirrorDungeonOCR:
 
         result = {'screen_type': screen_type}
         gift_texts = []
+        run_result = self.detect_run_result(img, window_info)
+        if run_result:
+            result['run_result'] = run_result
 
         if screen_type == 'event_choices':
             choices = self.scan_event_choices(img, window_info)

@@ -9,11 +9,13 @@ import threading
 import uuid
 import difflib
 import unicodedata
+import json
+import time
 import requests
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                               QLabel, QPushButton, QListWidget, QTabWidget,
                               QLineEdit, QComboBox, QListWidgetItem, QSpinBox,
-                              QFrame, QPlainTextEdit, QMessageBox)
+                              QFrame, QPlainTextEdit, QMessageBox, QCheckBox)
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QColor
 import ctypes
@@ -30,7 +32,7 @@ else:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DB_PATH = os.path.join(BASE_DIR, 'data', 'mirror_dungeon.db')
-SERVER_URL = os.environ.get("MD_SERVER_URL", "http://3.83.159.179:8080")
+SERVER_URL = os.environ.get("MD_SERVER_URL", "http://54.175.210.238:8080")
 
 
 def _local_db():
@@ -426,6 +428,15 @@ class DataClient:
         except Exception:
             return False
 
+    def submit_run_result(self, payload):
+        self.ensure_session()
+        result = payload.get("result")
+        return self.submit_feedback(
+            "런 결과",
+            json.dumps(payload, ensure_ascii=False),
+            5 if result == "클리어" else 1,
+        )
+
 
 class TitleBar(QFrame):
     def __init__(self, parent):
@@ -474,6 +485,9 @@ class MirrorDungeonTracker(QWidget):
         super().__init__()
         self.owned_gifts = []
         self.click_through = False
+        self.scan_running = False
+        self.last_auto_run_key = None
+        self.last_auto_run_at = 0
         self.data = DataClient()
         self.initUI()
         self.load_formation()
@@ -685,11 +699,59 @@ class MirrorDungeonTracker(QWidget):
         fbl.addStretch()
         tabs.addTab(fbt, "Feedback")
 
+        # Run result logging. Uses the existing feedback API so no DB schema change is needed.
+        rt = QWidget()
+        self.run_panel = rt
+        rt.setStyleSheet("background: transparent;")
+        rl = QVBoxLayout(rt)
+        rl.setContentsMargins(2, 2, 2, 2)
+        rl.setSpacing(3)
+        rl.addWidget(QLabel('Result:'))
+        self.run_result = QComboBox()
+        self.run_result.addItems(['클리어', '전복'])
+        rl.addWidget(self.run_result)
+        rl.addWidget(QLabel('Difficulty:'))
+        self.run_difficulty = QComboBox()
+        self.run_difficulty.addItems(['normal', 'hard', 'ritornello', 'other'])
+        rl.addWidget(self.run_difficulty)
+        rl.addWidget(QLabel('Deck / build:'))
+        self.run_deck = QLineEdit()
+        self.run_deck.setPlaceholderText('Bleed, Poise, Sinking...')
+        rl.addWidget(self.run_deck)
+        rl.addWidget(QLabel('Condition / cause:'))
+        self.run_cause = QLineEdit()
+        self.run_cause.setPlaceholderText('Boss, pack, missing key gift...')
+        rl.addWidget(self.run_cause)
+        rl.addWidget(QLabel('Memo:'))
+        self.run_note = QPlainTextEdit()
+        self.run_note.setMaximumHeight(95)
+        rl.addWidget(self.run_note)
+        self.run_auto_save = QCheckBox('Auto-save detected Mirror Dungeon result')
+        self.run_auto_save.setChecked(True)
+        rl.addWidget(self.run_auto_save)
+        self.run_auto_watch = QCheckBox('Watch screen every 15s')
+        self.run_auto_watch.stateChanged.connect(self.toggle_auto_watch)
+        rl.addWidget(self.run_auto_watch)
+        self.run_send = QPushButton('Save Run Result')
+        self.run_send.setStyleSheet("QPushButton { background: #1f6feb; border-color: #388bfd; } QPushButton:hover { background: #388bfd; }")
+        self.run_send.clicked.connect(self.send_run_result)
+        rl.addWidget(self.run_send)
+        self.run_status = QLabel('')
+        self.run_status.setStyleSheet('color: #8b949e; font-size: 8pt; border: none;')
+        rl.addWidget(self.run_status)
+        rl.addStretch()
+        self.auto_watch_timer = QTimer(self)
+        self.auto_watch_timer.setInterval(15000)
+        self.auto_watch_timer.timeout.connect(self.do_scan)
+
         content_layout.addWidget(tabs)
         cl.addWidget(content)
 
     def do_scan(self):
         """OCR 스캔 실행 (별도 스레드)"""
+        if self.scan_running:
+            return
+        self.scan_running = True
         self.scan_btn.setEnabled(False)
         self.status_label.setText("Scanning...")
         self.status_label.setStyleSheet('color: #f8c200; font-size: 8pt; border: none;')
@@ -722,6 +784,7 @@ class MirrorDungeonTracker(QWidget):
 
     def on_scan_done(self, result):
         """스캔 완료 콜백: OCR 텍스트를 DB 기프트와 매칭"""
+        self.scan_running = False
         self.scan_btn.setEnabled(True)
         if result.get('error'):
             self.status_label.setText(f"Error: {str(result['error'])[:40]}")
@@ -766,8 +829,65 @@ class MirrorDungeonTracker(QWidget):
             msg += f" | icon fallback {icon_added}/{icon_count}"
         if unmatched:
             msg += f" | missed: {', '.join(unmatched[:2])[:28]}"
+        auto_msg = self.auto_save_detected_run_result(result.get('run_result'))
+        if auto_msg:
+            msg += f" | {auto_msg}"
         self.status_label.setText(msg)
         self.status_label.setStyleSheet('color: #4caf50; font-size: 8pt; border: none;')
+
+    def auto_save_detected_run_result(self, detected):
+        if not detected or not self.run_auto_save.isChecked():
+            return ""
+        text = detected.get("text") or ""
+        result = detected.get("result") or "미분류"
+        key = (
+            result,
+            self.floor_spin.value(),
+            len(self.owned_gifts),
+            text[:120],
+        )
+        now = time.time()
+        if key == self.last_auto_run_key and now - self.last_auto_run_at < 900:
+            return "run already saved"
+
+        idx = self.run_result.findText(result)
+        if idx >= 0:
+            self.run_result.setCurrentIndex(idx)
+        if not self.run_cause.text().strip():
+            self.run_cause.setText(detected.get("cause") or "Mirror Dungeon result OCR")
+        if not self.run_note.toPlainText().strip() and text:
+            self.run_note.setPlainText(text[:300])
+
+        payload = self.current_run_conditions()
+        payload.update({
+            "result": result,
+            "difficulty": self.run_difficulty.currentText(),
+            "deck": self.infer_run_deck(),
+            "cause": self.run_cause.text().strip() or detected.get("cause") or "Mirror Dungeon result OCR",
+            "note": self.run_note.toPlainText().strip(),
+            "auto_detected": True,
+            "ocr_text": text[:500],
+        })
+        ok = self.data.submit_run_result(payload)
+        if ok:
+            self.last_auto_run_key = key
+            self.last_auto_run_at = now
+            self.run_status.setText('Auto-saved run result')
+            self.run_status.setStyleSheet('color: #4caf50; font-size: 8pt; border: none;')
+            return "run auto-saved"
+        self.run_status.setText('Auto-save failed')
+        self.run_status.setStyleSheet('color: #ff5555; font-size: 8pt; border: none;')
+        return "run save failed"
+
+    def toggle_auto_watch(self, state):
+        if state == Qt.Checked:
+            self.auto_watch_timer.start()
+            self.run_status.setText('Watching every 15s')
+            self.run_status.setStyleSheet('color: #8b949e; font-size: 8pt; border: none;')
+        else:
+            self.auto_watch_timer.stop()
+            self.run_status.setText('Watch stopped')
+            self.run_status.setStyleSheet('color: #8b949e; font-size: 8pt; border: none;')
 
     def toggle_click_through(self):
         if sys.platform != 'win32':
@@ -922,6 +1042,71 @@ class MirrorDungeonTracker(QWidget):
                 self.combo_list.addItem(f"  = {c.get('required_gifts')}")
             if c.get('notes'):
                 self.combo_list.addItem(f"  ({c.get('notes')})")
+
+    def current_run_conditions(self):
+        keywords = {}
+        for name in self.owned_gifts:
+            gift = self.data.gift_by_name(name)
+            if not gift:
+                continue
+            for kw in (gift.get('keyword') or '').split(','):
+                kw = kw.strip()
+                if kw and kw != 'General':
+                    keywords[kw] = keywords.get(kw, 0) + 1
+
+        identities = []
+        for i in range(self.persona_list.count()):
+            item = self.persona_list.item(i)
+            if item.checkState() != Qt.Checked:
+                continue
+            formation = item.data(Qt.UserRole) or {}
+            name = formation.get('character_name') or ''
+            nick = formation.get('character_nickname') or ''
+            identities.append(f"{nick} ({name})".strip())
+
+        return {
+            "floor": self.floor_spin.value(),
+            "gift_count": len(self.owned_gifts),
+            "gifts": list(self.owned_gifts),
+            "keywords": dict(sorted(keywords.items(), key=lambda x: -x[1])),
+            "identity_count": len(identities),
+            "identities": identities,
+        }
+
+    def infer_run_deck(self):
+        manual = self.run_deck.text().strip()
+        if manual:
+            return manual
+
+        for combo in (self.pack_deck_combo, self.deck_combo, self.combo_deck_combo):
+            deck = combo.currentText().strip()
+            if deck and deck != "All":
+                return deck
+
+        payload = self.current_run_conditions()
+        keywords = payload.get("keywords") or {}
+        if keywords:
+            top = sorted(keywords.items(), key=lambda x: -x[1])[:3]
+            return " / ".join(k for k, _ in top)
+        return ""
+
+    def send_run_result(self):
+        payload = self.current_run_conditions()
+        payload.update({
+            "result": self.run_result.currentText(),
+            "difficulty": self.run_difficulty.currentText(),
+            "deck": self.infer_run_deck(),
+            "cause": self.run_cause.text().strip(),
+            "note": self.run_note.toPlainText().strip(),
+        })
+        ok = self.data.submit_run_result(payload)
+        if ok:
+            self.run_note.clear()
+            self.run_status.setText('Run result saved')
+            self.run_status.setStyleSheet('color: #4caf50; font-size: 8pt; border: none;')
+        else:
+            self.run_status.setText('Server save failed')
+            self.run_status.setStyleSheet('color: #ff5555; font-size: 8pt; border: none;')
 
     def send_feedback(self):
         content = self.fb_text.toPlainText().strip()
