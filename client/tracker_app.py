@@ -181,7 +181,21 @@ class DataClient:
         return None
 
     # --- 추천 (보유 기프트 키워드 시너지) ---
-    def recommend(self, owned_names):
+    def recommend(self, owned_names, floor=None, deck=None):
+        try:
+            data = self._api_post("/recommend/ai", {
+                "current_gifts": owned_names,
+                "current_floor": floor or 1,
+                "deck": None if not deck or deck == "All" else deck,
+                "limit": 5,
+            }, timeout=25)
+            recs = data.get("gift_recommendations") or []
+            if recs:
+                summary = data.get("summary") or "Gemini"
+                return [("AI", summary)], recs[:5]
+        except Exception:
+            pass
+
         kws = {}
         owned_set = set(owned_names)
         for n in owned_names:
@@ -934,7 +948,8 @@ class MirrorDungeonTracker(QWidget):
         if not self.owned_gifts:
             self.rec_list.addItem("Add gifts first (Scan or Search)")
             return
-        kw_summary, recs = self.data.recommend(self.owned_gifts)
+        deck = self.pack_deck_combo.currentText()
+        kw_summary, recs = self.data.recommend(self.owned_gifts, self.floor_spin.value(), deck)
         if not kw_summary:
             self.rec_list.addItem("No keyword synergy found")
             return
@@ -946,7 +961,8 @@ class MirrorDungeonTracker(QWidget):
             item = QListWidgetItem(f"  [T{g.get('tier', '?')}] {dn}")
             item.setData(Qt.UserRole, g)
             item.setData(Qt.UserRole + 1, True)
-            item.setToolTip((g.get('simple_desc') or g.get('description') or '')[:160])
+            tip = g.get('reason') or g.get('simple_desc') or g.get('description') or ''
+            item.setToolTip(tip[:240])
             self.rec_list.addItem(item)
 
     def on_floor_change(self, v):
