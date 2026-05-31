@@ -12,7 +12,7 @@ import win32gui
 import win32con
 from screen_regions import REGIONS, get_pixel_region, get_all_regions_for_screen
 
-SERVER_URL = os.environ.get("MD_SERVER_URL", "http://23.22.200.94:8080")
+SERVER_URL = os.environ.get("MD_SERVER_URL", "http://13.218.132.41:8080")
 ICON_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "egogift_icons")
 ICON_MATCH_THRESHOLD = 0.72
 RUN_RESULT_KEYWORDS = {

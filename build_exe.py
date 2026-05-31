@@ -38,7 +38,7 @@ def build():
             "1. Unzip MirrorDungeonTracker.zip first.\n"
             "2. Keep all files in the extracted MirrorDungeonTracker folder.\n"
             "3. Run MirrorDungeonTracker.exe inside that folder.\n"
-            "4. The default server is http://23.22.200.94:8080.\n"
+            "4. The default server is http://13.218.132.41:8080.\n"
             "5. For local development, set MD_SERVER_URL before running the app.\n"
         )
 

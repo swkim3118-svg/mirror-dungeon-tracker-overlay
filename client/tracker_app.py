@@ -32,7 +32,7 @@ else:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DB_PATH = os.path.join(BASE_DIR, 'data', 'mirror_dungeon.db')
-SERVER_URL = os.environ.get("MD_SERVER_URL", "http://23.22.200.94:8080")
+SERVER_URL = os.environ.get("MD_SERVER_URL", "http://13.218.132.41:8080")
 
 
 def _local_db():
