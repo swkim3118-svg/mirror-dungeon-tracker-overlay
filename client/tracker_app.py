@@ -760,6 +760,7 @@ class MirrorDungeonTracker(QWidget):
         self.auto_watch_timer = QTimer(self)
         self.auto_watch_timer.setInterval(15000)
         self.auto_watch_timer.timeout.connect(self.do_scan)
+        tabs.addTab(rt, "Run")
 
         content_layout.addWidget(tabs)
         cl.addWidget(content)
