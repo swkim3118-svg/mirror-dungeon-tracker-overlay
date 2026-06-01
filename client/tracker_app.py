@@ -811,7 +811,9 @@ class MirrorDungeonTracker(QWidget):
 
         screen = result.get('screen_type') or 'unknown'
         texts = result.get('gift_texts') or result.get('texts') or []
-        floor = self.floor_spin.value()
+        detected_floor = result.get('detected_floor')
+        if detected_floor is not None and detected_floor != self.floor_spin.value():
+            self.floor_spin.setValue(detected_floor)
 
         added = 0
         unmatched = []
@@ -843,6 +845,8 @@ class MirrorDungeonTracker(QWidget):
         icon_count = len(result.get('icon_matches') or [])
         total_seen = len(texts) + icon_count
         msg = f"[{screen}] {added}/{total_seen} matched & added"
+        if detected_floor is not None:
+            msg += f" | floor {detected_floor}F"
         if icon_count:
             msg += f" | icon fallback {icon_added}/{icon_count}"
         if unmatched:

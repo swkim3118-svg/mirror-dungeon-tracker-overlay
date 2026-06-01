@@ -3,6 +3,7 @@ Mirror Dungeon OCR Client - 업데이트 버전
 화면 자동 감지 + 영역별 OCR
 """
 import os
+import re
 import mss
 import cv2
 import numpy as np
@@ -29,6 +30,26 @@ RUN_RESULT_CONTEXT_KEYWORDS = [
     "거울던전", "거울 던전", "Mirror Dungeon", "mirror dungeon",
     "탐사", "정산", "보상", "코스트", "별빛", "시즌",
 ]
+FLOOR_REGIONS = [
+    (0.00, 0.00, 1.00, 0.18),
+    (0.00, 0.78, 0.55, 0.22),
+]
+
+
+def extract_floor_number(text):
+    """Extract an explicit Mirror Dungeon floor number from OCR text."""
+    patterns = [
+        r'제\s*(\d{1,2})\s*층',
+        r'(?<!\d)(\d{1,2})\s*층',
+        r'\bFLOOR\s*[:\-]?\s*(\d{1,2})\b',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text or "", re.IGNORECASE)
+        if match:
+            floor = int(match.group(1))
+            if 1 <= floor <= 15:
+                return floor
+    return None
 
 class MirrorDungeonOCR:
     def __init__(self):
@@ -157,6 +178,19 @@ class MirrorDungeonOCR:
                     }
         return None
 
+    def detect_floor(self, img, window_info):
+        """Read an explicitly labelled floor number without guessing from bare digits."""
+        text_parts = []
+        for region in FLOOR_REGIONS:
+            text = self.ocr_region(img, region, window_info)
+            if text:
+                text_parts.append(text)
+        combined = " ".join(text_parts)
+        return {
+            "floor": extract_floor_number(combined),
+            "text": combined[:300],
+        }
+
     def scan_event_choices(self, img, window_info):
         """이벤트 선택지 화면 스캔"""
         config = REGIONS['event_choices']
@@ -213,6 +247,10 @@ class MirrorDungeonOCR:
 
         result = {'screen_type': screen_type}
         gift_texts = []
+        floor_result = self.detect_floor(img, window_info)
+        if floor_result.get('floor') is not None:
+            result['detected_floor'] = floor_result['floor']
+            result['floor_text'] = floor_result['text']
         run_result = self.detect_run_result(img, window_info)
         if run_result:
             result['run_result'] = run_result
