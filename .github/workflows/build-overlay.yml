@@ -3,8 +3,8 @@ name: Build Overlay
 on:
   workflow_dispatch:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -37,8 +37,10 @@ jobs:
           path: dist/MirrorDungeonTracker.zip
 
       - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: overlay-${{ github.run_number }}
+          name: Overlay build ${{ github.run_number }}
+          make_latest: true
           files: dist/MirrorDungeonTracker.zip
           generate_release_notes: true
