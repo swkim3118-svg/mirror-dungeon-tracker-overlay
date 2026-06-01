@@ -6,6 +6,7 @@ import PyInstaller.__main__
 
 
 APP_NAME = "MirrorDungeonTracker"
+UPDATER_NAME = "Updater"
 
 
 def build():
@@ -30,17 +31,40 @@ def build():
     app_dir = os.path.join("dist", APP_NAME)
     exe_path = os.path.join(app_dir, f"{APP_NAME}.exe")
     readme_path = os.path.join(app_dir, "README.txt")
+    version_path = os.path.join(app_dir, "VERSION.txt")
     zip_path = os.path.join("dist", f"{APP_NAME}.zip")
+    version = os.environ.get("OVERLAY_VERSION", "dev")
 
     with open(readme_path, "w", encoding="utf-8") as f:
         f.write(
             "Mirror Dungeon Tracker Overlay\n"
             "\n"
             "1. Unzip MirrorDungeonTracker.zip first.\n"
-            "2. Keep all files in the extracted MirrorDungeonTracker folder.\n"
-            "3. Run MirrorDungeonTracker.exe inside that folder.\n"
+            "2. Run Updater.exe from the extracted folder.\n"
+            "3. Updater.exe installs updates and starts the overlay.\n"
             "4. The default server is http://13.218.132.41:8080.\n"
             "5. For local development, set MD_SERVER_URL before running the app.\n"
+        )
+
+    with open(version_path, "w", encoding="utf-8") as f:
+        f.write(version + "\n")
+
+    PyInstaller.__main__.run([
+        "updater.py",
+        f"--name={UPDATER_NAME}",
+        "--onefile",
+        "--windowed",
+        "--icon=NONE",
+        "--noconfirm",
+    ])
+
+    start_here_path = os.path.join("dist", "START_HERE.txt")
+    with open(start_here_path, "w", encoding="utf-8") as f:
+        f.write(
+            "Mirror Dungeon Tracker Overlay\n"
+            "\n"
+            "Run Updater.exe to start the overlay.\n"
+            "It automatically downloads the latest release when needed.\n"
         )
 
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -49,6 +73,8 @@ def build():
                 full_path = os.path.join(root, file_name)
                 archive_path = os.path.relpath(full_path, "dist")
                 zf.write(full_path, arcname=archive_path)
+        zf.write(os.path.join("dist", f"{UPDATER_NAME}.exe"), arcname=f"{UPDATER_NAME}.exe")
+        zf.write(start_here_path, arcname="START_HERE.txt")
 
     print(f"\nBuild complete: {exe_path}")
     print(f"Release zip: {zip_path}")
