@@ -32,6 +32,7 @@ else:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DB_PATH = os.path.join(BASE_DIR, 'data', 'mirror_dungeon.db')
+GENERAL_GIFT_GUIDE_PATH = os.path.join(BASE_DIR, 'data', 'general_ego_gift_guide.md')
 SERVER_URL = os.environ.get("MD_SERVER_URL", "http://13.218.132.41:8080")
 
 
@@ -44,6 +45,23 @@ def _local_db():
 def normalize_name(text):
     text = unicodedata.normalize("NFKC", text or "").lower()
     return ''.join(ch for ch in text if ch.isalnum())
+
+
+def load_general_gift_guide():
+    sections = {}
+    current_section = None
+    try:
+        with open(GENERAL_GIFT_GUIDE_PATH, 'r', encoding='utf-8') as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if line.startswith('## '):
+                    current_section = line[3:].strip()
+                    sections.setdefault(current_section, [])
+                elif current_section and line.startswith('- '):
+                    sections[current_section].append(line[2:].strip())
+    except Exception:
+        return {}
+    return sections
 
 
 class DataClient:
@@ -65,6 +83,7 @@ class DataClient:
         self.session_id = None
         self._web_decks = None
         self._deck_detail_cache = {}
+        self._general_gift_guide = load_general_gift_guide()
         self.user_id = self._load_user_id()
         self._load_gifts()
 
@@ -209,13 +228,27 @@ class DataClient:
             return [], []
         top = max(kws, key=kws.get)
         recs = []
+        guide_sections = {
+            'Rupture': '파열', 'Tremor': '진동', 'Poise': '호흡',
+            'Charge': '충전', 'Burn': '화상', 'Sinking': '침잠',
+            'Bleed': '출혈',
+        }
+        guide_names = (
+            self._general_gift_guide.get(guide_sections.get(top), [])
+            + self._general_gift_guide.get('범용', [])
+            + self._general_gift_guide.get('참관타 에깊', [])
+        )
+        guided = {normalize_name(name.split('(')[0]): i for i, name in enumerate(guide_names)}
         for g in self._gifts:
             disp = g.get('name_kr') or g.get('name')
             if disp in owned_set:
                 continue
             if top.lower() in (g.get('keyword') or '').lower():
                 recs.append(g)
-        recs.sort(key=lambda x: -(x.get('tier') or 0))
+        recs.sort(key=lambda x: (
+            guided.get(normalize_name(x.get('name_kr') or x.get('name')), len(guided) + 1),
+            -(x.get('tier') or 0),
+        ))
         kw_summary = sorted(kws.items(), key=lambda x: -x[1])
         return kw_summary, recs[:5]
 
@@ -285,10 +318,6 @@ class DataClient:
                         "SELECT * FROM deck_floor_packs WHERE deck_id=? ORDER BY floor_number, priority",
                         (deck_id,),
                     ).fetchall()],
-                    "goods_gifts": [dict(r) for r in conn.execute(
-                        "SELECT * FROM deck_goods_gifts WHERE deck_id=? ORDER BY priority, id",
-                        (deck_id,),
-                    ).fetchall()],
                 }
                 conn.close()
             except Exception:
@@ -353,32 +382,6 @@ class DataClient:
 
     def combinations(self, deck=None):
         deck = None if not deck or deck == "All" else deck
-        if deck:
-            detail = self.deck_detail(deck)
-            if detail is not None:
-                return [
-                    {
-                        "deck_name": deck,
-                        "result_gift": g.get("gift_name"),
-                        "required_gifts": "",
-                        "notes": g.get("notes") or "",
-                    }
-                    for g in detail.get("goods_gifts", [])
-                ]
-        else:
-            all_goods = []
-            for web_deck in self.web_decks():
-                detail = self.deck_detail(web_deck.get("name"))
-                if not detail:
-                    continue
-                all_goods.extend({
-                    "deck_name": web_deck.get("name"),
-                    "result_gift": g.get("gift_name"),
-                    "required_gifts": "",
-                    "notes": g.get("notes") or "",
-                } for g in detail.get("goods_gifts", []))
-            if all_goods:
-                return all_goods
         try:
             data = self._api_get("/combinations")
             self.online = True

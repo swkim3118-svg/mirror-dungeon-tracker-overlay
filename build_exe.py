@@ -18,6 +18,7 @@ def build():
         f"--name={APP_NAME}",
         "--windowed",
         "--add-data=data/mirror_dungeon.db;data",
+        "--add-data=data/general_ego_gift_guide.md;data",
         "--add-data=data/egogift_icons;data/egogift_icons",
         "--hidden-import=ocr_client",
         "--hidden-import=screen_regions",
