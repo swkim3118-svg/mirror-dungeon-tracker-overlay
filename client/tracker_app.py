@@ -151,7 +151,7 @@ class DataClient:
         return f"{mode} | {len(self._gifts)} gifts | user {self.user_id}"
 
     # --- 검색 (메모리) ---
-    def search_gifts(self, text, keyword='All', limit=25):
+    def search_gifts(self, text, keyword='All', limit=500):
         text = normalize_name(text)
         out = []
         for g in self._gifts:
@@ -507,6 +507,7 @@ class MirrorDungeonTracker(QWidget):
         self.last_auto_run_at = 0
         self.data = DataClient()
         self.initUI()
+        self.search_gifts()
         self.load_formation()
         self.load_floor_recommendations()
         self.load_combinations()
@@ -611,9 +612,11 @@ class MirrorDungeonTracker(QWidget):
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText('Search gift...')
         self.search_input.returnPressed.connect(self.search_gifts)
+        self.search_input.textChanged.connect(lambda _: self.search_gifts())
         sr.addWidget(self.search_input)
         self.keyword_combo = QComboBox()
         self.keyword_combo.addItems(['All', 'Burn', 'Bleed', 'Tremor', 'Rupture', 'Sinking', 'Poise', 'Charge'])
+        self.keyword_combo.currentTextChanged.connect(lambda _: self.search_gifts())
         self.keyword_combo.setFixedWidth(65)
         sr.addWidget(self.keyword_combo)
         sl.addLayout(sr)
