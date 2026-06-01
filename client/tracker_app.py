@@ -1014,10 +1014,19 @@ class MirrorDungeonTracker(QWidget):
         self.deck_combo.addItems(deck_names)
         self.deck_combo.blockSignals(False)
 
+        pack_default = next(
+            (
+                deck_name for deck_name in deck_names
+                if self.data.floor_recommendations(self.floor_spin.value(), deck_name)
+            ),
+            deck_names[0] if deck_names else "All",
+        )
         for combo in (self.pack_deck_combo, self.combo_deck_combo):
             combo.blockSignals(True)
             combo.clear()
             combo.addItems(["All"] + deck_names)
+            if deck_names:
+                combo.setCurrentText(pack_default if combo is self.pack_deck_combo else deck_names[0])
             combo.blockSignals(False)
 
         if deck_names:
