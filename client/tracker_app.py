@@ -217,7 +217,7 @@ class DataClient:
                 "current_floor": floor or 1,
                 "deck": None if not deck or deck == "All" else deck,
                 "limit": 5,
-            }, timeout=55)
+            }, timeout=10)
             self.gemini_online = True
             recs = data.get("gift_recommendations") or []
             if recs:
