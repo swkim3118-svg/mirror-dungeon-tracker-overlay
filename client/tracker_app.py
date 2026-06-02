@@ -84,8 +84,10 @@ class DataClient:
         self._web_decks = None
         self._deck_detail_cache = {}
         self._general_gift_guide = load_general_gift_guide()
+        self.gemini_online = False
         self.user_id = self._load_user_id()
         self._load_gifts()
+        self.check_gemini_status()
 
     # --- user id (재실행 시 동일 사용자 유지) ---
     def _load_user_id(self):
@@ -112,6 +114,14 @@ class DataClient:
         r = requests.post(f"{SERVER_URL}{path}", json=json, timeout=timeout)
         r.raise_for_status()
         return r.json()
+
+    def check_gemini_status(self):
+        try:
+            status = self._api_get("/recommend/ai/status", timeout=6)
+            self.gemini_online = bool(status.get("available"))
+        except Exception:
+            self.gemini_online = False
+        return self.gemini_online
 
     # --- 전체 기프트 로드 (API -> 로컬 폴백) ---
     def _load_gifts(self):
@@ -207,13 +217,14 @@ class DataClient:
                 "current_floor": floor or 1,
                 "deck": None if not deck or deck == "All" else deck,
                 "limit": 5,
-            }, timeout=25)
+            }, timeout=55)
+            self.gemini_online = True
             recs = data.get("gift_recommendations") or []
             if recs:
                 summary = data.get("summary") or "Gemini"
                 return [("AI", summary)], recs[:5]
         except Exception:
-            pass
+            self.gemini_online = False
 
         kws = {}
         owned_set = set(owned_names)
@@ -224,6 +235,19 @@ class DataClient:
                     k = k.strip()
                     if k and k != 'General':
                         kws[k] = kws.get(k, 0) + 1
+        deck_row = self._web_deck_by_name(deck)
+        keyword_map = {
+            '파열': 'Rupture', '진동': 'Tremor', '호흡': 'Poise',
+            '충전': 'Charge', '화상': 'Burn', '침잠': 'Sinking',
+            '출혈': 'Bleed',
+        }
+        deck_keywords = [
+            keyword_map.get(keyword.strip())
+            for keyword in (deck_row or {}).get('keywords', '').split(',')
+        ]
+        deck_keywords = [keyword for keyword in deck_keywords if keyword]
+        if deck_keywords:
+            kws[deck_keywords[0]] = max(kws.get(deck_keywords[0], 0), 100)
         if not kws:
             return [], []
         top = max(kws, key=kws.get)
@@ -239,13 +263,34 @@ class DataClient:
             + self._general_gift_guide.get('참관타 에깊', [])
         )
         guided = {normalize_name(name.split('(')[0]): i for i, name in enumerate(guide_names)}
+        general_names = {
+            normalize_name(name.split('(')[0])
+            for name in self._general_gift_guide.get('범용', [])
+        }
+        pack_names = []
+        detail = self.deck_detail(deck) if deck else None
+        for pack in (detail or {}).get('floor_packs', []):
+            if (pack.get('floor_number') or 0) <= (floor or 1):
+                pack_names.extend((pack.get('key_gifts') or '').split(','))
+        pack_priority = {
+            normalize_name(name.strip().split('(')[0]): i
+            for i, name in enumerate(pack_names)
+            if name.strip()
+        }
         for g in self._gifts:
             disp = g.get('name_kr') or g.get('name')
             if disp in owned_set:
                 continue
-            if top.lower() in (g.get('keyword') or '').lower():
-                recs.append(g)
+            is_general = (
+                'General' in (g.get('keyword') or '').split(',')
+                or normalize_name(disp) in general_names
+            )
+            if top.lower() in (g.get('keyword') or '').lower() or is_general:
+                gift = dict(g)
+                gift['recommendation_type'] = 'general' if is_general else 'deck'
+                recs.append(gift)
         recs.sort(key=lambda x: (
+            pack_priority.get(normalize_name(x.get('name_kr') or x.get('name')), len(pack_priority) + 1),
             guided.get(normalize_name(x.get('name_kr') or x.get('name')), len(guided) + 1),
             -(x.get('tier') or 0),
         ))
@@ -512,6 +557,7 @@ class MirrorDungeonTracker(QWidget):
         self.load_floor_recommendations()
         self.load_combinations()
         self.status_label.setText(self.data.status_text)
+        self.refresh_gemini_status()
 
     def initUI(self):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
@@ -563,6 +609,9 @@ class MirrorDungeonTracker(QWidget):
         self.floor_spin.setFixedWidth(45)
         self.floor_spin.valueChanged.connect(self.on_floor_change)
         ctrl.addWidget(self.floor_spin)
+        self.gemini_status = QLabel('●')
+        self.gemini_status.setFixedWidth(12)
+        ctrl.addWidget(self.gemini_status)
         ctrl.addStretch()
         self.scan_btn = QPushButton('Scan')
         self.scan_btn.setStyleSheet("QPushButton { background: #238636; border-color: #2ea043; } QPushButton:hover { background: #2ea043; }")
@@ -961,6 +1010,7 @@ class MirrorDungeonTracker(QWidget):
             return
         deck = self.pack_deck_combo.currentText()
         kw_summary, recs = self.data.recommend(self.owned_gifts, self.floor_spin.value(), deck)
+        self.refresh_gemini_status()
         if not kw_summary:
             self.rec_list.addItem("No keyword synergy found")
             return
@@ -969,12 +1019,21 @@ class MirrorDungeonTracker(QWidget):
         self.rec_list.addItem(h)
         for g in recs:
             dn = g.get('name_kr') or g.get('name')
-            item = QListWidgetItem(f"  [T{g.get('tier', '?')}] {dn}")
+            badge = " [범용]" if g.get('recommendation_type') == 'general' else ""
+            item = QListWidgetItem(f"  [T{g.get('tier', '?')}]{badge} {dn}")
             item.setData(Qt.UserRole, g)
             item.setData(Qt.UserRole + 1, True)
             tip = g.get('reason') or g.get('simple_desc') or g.get('description') or ''
             item.setToolTip(tip[:240])
             self.rec_list.addItem(item)
+
+    def refresh_gemini_status(self):
+        if self.data.gemini_online:
+            self.gemini_status.setStyleSheet('color: #2ea043; font-size: 11pt; border: none;')
+            self.gemini_status.setToolTip('Gemini connected')
+        else:
+            self.gemini_status.setStyleSheet('color: #f8c200; font-size: 11pt; border: none;')
+            self.gemini_status.setToolTip('Gemini unavailable: using selected deck guide fallback')
 
     def on_floor_change(self, v):
         self.load_floor_recommendations()
