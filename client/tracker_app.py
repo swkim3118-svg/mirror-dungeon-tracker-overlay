@@ -222,7 +222,7 @@ class DataClient:
             recs = data.get("gift_recommendations") or []
             if recs:
                 summary = data.get("summary") or "Gemini"
-                return [("AI", summary)], recs[:5]
+                return [("AI", summary)], self._append_general_recommendations(recs[:5], owned_names)
         except Exception:
             self.gemini_online = False
 
@@ -295,7 +295,68 @@ class DataClient:
             -(x.get('tier') or 0),
         ))
         kw_summary = sorted(kws.items(), key=lambda x: -x[1])
-        return kw_summary, recs[:5]
+        pack_recs = self._pack_fallback_recommendations(deck, floor, owned_names)
+        pack_rec_names = {
+            normalize_name(gift.get('name_kr') or gift.get('name'))
+            for gift in pack_recs
+        }
+        deck_recs = pack_recs + [
+            gift for gift in recs
+            if normalize_name(gift.get('name_kr') or gift.get('name')) not in pack_rec_names
+        ]
+        return kw_summary, self._append_general_recommendations(
+            [gift for gift in deck_recs if gift.get('recommendation_type') != 'general'][:5],
+            owned_names,
+        )
+
+    def _pack_fallback_recommendations(self, deck, floor, owned_names):
+        owned = {normalize_name(name) for name in owned_names}
+        rows = []
+        detail = self.deck_detail(deck) if deck else None
+        for pack in (detail or {}).get('floor_packs', []):
+            if (pack.get('floor_number') or 0) > (floor or 1):
+                continue
+            for raw_name in (pack.get('key_gifts') or '').split(','):
+                name = raw_name.split('(', 1)[0].strip()
+                normalized = normalize_name(name)
+                if not name or normalized in owned:
+                    continue
+                rows.append((
+                    0 if '(필수)' in raw_name else 1,
+                    -(pack.get('floor_number') or 0),
+                    pack.get('priority') or 99,
+                    {
+                        'name': name,
+                        'name_kr': name,
+                        'recommendation_type': 'deck',
+                        'reason': f"{pack.get('pack_name') or 'Pack'} 팩 공략",
+                    },
+                ))
+                owned.add(normalized)
+        rows.sort(key=lambda row: row[:3])
+        return [row[3] for row in rows]
+
+    def _append_general_recommendations(self, recs, owned_names, limit=3):
+        out = list(recs)
+        excluded = {
+            normalize_name(name)
+            for name in list(owned_names) + [
+                gift.get('name_kr') or gift.get('name') or ''
+                for gift in out
+            ]
+        }
+        for guide_name in self._general_gift_guide.get('범용', []):
+            normalized = normalize_name(guide_name.split('(')[0])
+            gift = self._normalized_name_index.get(normalized)
+            if not gift or normalized in excluded:
+                continue
+            item = dict(gift)
+            item['recommendation_type'] = 'general'
+            out.append(item)
+            excluded.add(normalized)
+            if sum(gift.get('recommendation_type') == 'general' for gift in out) >= limit:
+                break
+        return out
 
     # --- 가이드 테이블 (API -> 로컬) ---
     def _table(self, api_path, sql):
