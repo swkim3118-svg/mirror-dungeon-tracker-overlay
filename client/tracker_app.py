@@ -1210,22 +1210,21 @@ class MirrorDungeonTracker(QWidget):
 
     def load_combinations(self, *_):
         self.combo_list.clear()
-        deck = self.combo_deck_combo.currentText()
-        combos = self.data.combinations(deck)
+        combos = self.data.combinations("All")
         if not combos:
             self.combo_list.addItem("No synthesis recipes")
             return
         for c in combos:
             title = c.get('result_gift') or "Unknown recipe"
-            if deck == "All" and c.get('deck_name'):
+            if c.get('deck_name'):
                 title = f"[{c.get('deck_name')}] {title}"
             item = QListWidgetItem(f"{title}")
             item.setForeground(QColor('#f8c200'))
             self.combo_list.addItem(item)
             if c.get('required_gifts'):
-                self.combo_list.addItem(f"  합성: {c.get('required_gifts')}")
+                self.combo_list.addItem(f"  재료: {c.get('required_gifts')}")
             if c.get('notes'):
-                self.combo_list.addItem(f"  ({c.get('notes')})")
+                self.combo_list.addItem(f"  비고: {c.get('notes')}")
 
     def current_run_conditions(self):
         keywords = {}
