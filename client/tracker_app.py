@@ -517,6 +517,21 @@ class DataClient:
                 return []
 
     # --- 세션 / 로그 / 피드백 (서버 전용) ---
+    def combination_decks(self):
+        try:
+            conn = _local_db()
+            rows = [
+                r[0] for r in conn.execute(
+                    "SELECT DISTINCT deck_name FROM gift_combinations "
+                    "WHERE deck_name IS NOT NULL AND deck_name != '' "
+                    "ORDER BY deck_name"
+                ).fetchall()
+            ]
+            conn.close()
+            return rows
+        except Exception:
+            return []
+
     def ensure_session(self):
         if self.session_id is not None:
             return self.session_id
@@ -1148,13 +1163,19 @@ class MirrorDungeonTracker(QWidget):
             ),
             deck_names[0] if deck_names else "All",
         )
-        for combo in (self.pack_deck_combo, self.combo_deck_combo):
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItems(["All"] + deck_names)
-            if deck_names:
-                combo.setCurrentText(pack_default if combo is self.pack_deck_combo else deck_names[0])
-            combo.blockSignals(False)
+        self.pack_deck_combo.blockSignals(True)
+        self.pack_deck_combo.clear()
+        self.pack_deck_combo.addItems(["All"] + deck_names)
+        if deck_names:
+            self.pack_deck_combo.setCurrentText(pack_default)
+        self.pack_deck_combo.blockSignals(False)
+
+        combo_deck_names = self.data.combination_decks()
+        self.combo_deck_combo.blockSignals(True)
+        self.combo_deck_combo.clear()
+        self.combo_deck_combo.addItems(["All"] + combo_deck_names)
+        self.combo_deck_combo.setCurrentText("All")
+        self.combo_deck_combo.blockSignals(False)
 
         if deck_names:
             self.on_deck_changed(deck_names[0])
@@ -1192,17 +1213,17 @@ class MirrorDungeonTracker(QWidget):
         deck = self.combo_deck_combo.currentText()
         combos = self.data.combinations(deck)
         if not combos:
-            self.combo_list.addItem("No combinations for this filter")
+            self.combo_list.addItem("No synthesis recipes")
             return
         for c in combos:
-            title = c.get('result_gift')
+            title = c.get('result_gift') or "Unknown recipe"
             if deck == "All" and c.get('deck_name'):
                 title = f"[{c.get('deck_name')}] {title}"
             item = QListWidgetItem(f"{title}")
             item.setForeground(QColor('#f8c200'))
             self.combo_list.addItem(item)
             if c.get('required_gifts'):
-                self.combo_list.addItem(f"  = {c.get('required_gifts')}")
+                self.combo_list.addItem(f"  합성: {c.get('required_gifts')}")
             if c.get('notes'):
                 self.combo_list.addItem(f"  ({c.get('notes')})")
 
