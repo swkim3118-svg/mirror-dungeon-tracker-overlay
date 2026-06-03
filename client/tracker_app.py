@@ -33,7 +33,7 @@ else:
 
 DB_PATH = os.path.join(BASE_DIR, 'data', 'mirror_dungeon.db')
 GENERAL_GIFT_GUIDE_PATH = os.path.join(BASE_DIR, 'data', 'general_ego_gift_guide.md')
-SERVER_URL = os.environ.get("MD_SERVER_URL", "http://13.218.132.41:8080")
+SERVER_URL = os.environ.get("MD_SERVER_URL", "http://54.198.45.77:8080")
 
 
 def _local_db():
