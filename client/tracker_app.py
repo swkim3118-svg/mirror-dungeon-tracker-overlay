@@ -1216,8 +1216,6 @@ class MirrorDungeonTracker(QWidget):
             return
         for c in combos:
             title = c.get('result_gift') or "Unknown recipe"
-            if c.get('deck_name'):
-                title = f"[{c.get('deck_name')}] {title}"
             item = QListWidgetItem(f"{title}")
             item.setForeground(QColor('#f8c200'))
             self.combo_list.addItem(item)
