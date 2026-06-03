@@ -42,8 +42,8 @@ def build():
             "1. Unzip MirrorDungeonTracker.zip first.\n"
             "2. Run Updater.exe from the extracted folder.\n"
             "3. Updater.exe installs updates and starts the overlay.\n"
-            "4. The default server is http://54.198.45.77:8080.\n"
-            "5. For local development, set MD_SERVER_URL before running the app.\n"
+            "4. The overlay uses bundled local data by default.\n"
+            "5. To opt into a remote API, set MD_SERVER_URL before running the app.\n"
         )
 
     with open(version_path, "w", encoding="utf-8") as f:

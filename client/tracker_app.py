@@ -28,12 +28,15 @@ if sys.platform == 'win32':
 
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
+    RESOURCE_DIR = getattr(sys, '_MEIPASS', BASE_DIR)
 else:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    RESOURCE_DIR = BASE_DIR
 
-DB_PATH = os.path.join(BASE_DIR, 'data', 'mirror_dungeon.db')
-GENERAL_GIFT_GUIDE_PATH = os.path.join(BASE_DIR, 'data', 'general_ego_gift_guide.md')
-SERVER_URL = os.environ.get("MD_SERVER_URL", "http://54.198.45.77:8080")
+DATA_DIR = os.path.join(RESOURCE_DIR, 'data')
+DB_PATH = os.path.join(DATA_DIR, 'mirror_dungeon.db')
+GENERAL_GIFT_GUIDE_PATH = os.path.join(DATA_DIR, 'general_ego_gift_guide.md')
+SERVER_URL = os.environ.get("MD_SERVER_URL", "").strip()
 
 
 def _local_db():
@@ -106,11 +109,15 @@ class DataClient:
             return uuid.uuid4().hex[:12]
 
     def _api_get(self, path, params=None, timeout=3):
+        if not SERVER_URL:
+            raise RuntimeError("Remote API is disabled")
         r = requests.get(f"{SERVER_URL}{path}", params=params, timeout=timeout)
         r.raise_for_status()
         return r.json()
 
     def _api_post(self, path, json, timeout=3):
+        if not SERVER_URL:
+            raise RuntimeError("Remote API is disabled")
         r = requests.post(f"{SERVER_URL}{path}", json=json, timeout=timeout)
         r.raise_for_status()
         return r.json()
